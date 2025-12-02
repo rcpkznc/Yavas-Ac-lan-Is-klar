@@ -1,0 +1,135 @@
+blueprint:
+  name: Sabah Yavaş Işık Açma (Akıllı Artırma)
+  description: >
+    Belirlenen gün ve saatte ışığı açar, düşük parlaklıktan hedef parlaklığa
+    yumuşak şekilde yükseltir. İsteğe bağlı switch açma desteği var.
+  domain: automation
+  input:
+    trigger_time:
+      name: Başlama Saati
+      description: Otomasyonun çalışacağı saat
+      selector:
+        time:
+
+    days:
+      name: Günler
+      description: Hangi günlerde çalışsın?
+      default:
+        - mon
+        - tue
+        - wed
+        - thu
+        - fri
+      selector:
+        select:
+          multiple: true
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
+
+    light_entity:
+      name: Lamba
+      selector:
+        entity:
+          domain: light
+
+    start_brightness:
+      name: Başlangıç Parlaklığı (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: slider
+
+    end_brightness:
+      name: Hedef Parlaklık (%)
+      default: 65
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: slider
+
+    increase_step:
+      name: Artış Adımı (%)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+          mode: slider
+
+    increase_interval:
+      name: Artış Aralığı (saniye)
+      default: 25
+      selector:
+        number:
+          min: 5
+          max: 120
+          mode: slider
+
+    optional_switch:
+      name: Açılacak Switch (Opsiyonel)
+      default: ""
+      selector:
+        entity:
+          domain: switch
+          multiple: false
+          include:
+            - switch.*
+
+mode: single
+
+triggers:
+  - platform: time
+    at: !input trigger_time
+
+conditions:
+  - condition: time
+    weekday: !input days
+
+actions:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ (input.optional_switch | default('')) != '' }}"
+          - condition: state
+            entity_id: !input optional_switch
+            state: "off"
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input optional_switch
+          - delay: "00:00:02"
+
+  - action: light.turn_on
+    target:
+      entity_id: !input light_entity
+    data:
+      brightness_pct: !input start_brightness
+
+  - repeat:
+      while:
+        - condition: template
+          value_template: >
+            {% set current = state_attr((input.light_entity), 'brightness') | int %}
+            {% set target = (input.end_brightness | int) * 255 / 100 %}
+            {{ current < target }}
+      sequence:
+        - delay:
+            seconds: !input increase_interval
+        - action: light.turn_on
+          target:
+            entity_id: !input light_entity
+          data:
+            brightness: >
+              {% set current = state_attr((input.light_entity), 'brightness') | int %}
+              {% set target = (input.end_brightness | int) * 255 / 100 %}
+              {% set step = (input.increase_step | int) * 255 / 100 %}
+              {{ [current + step, target] | min | int }}
